@@ -2,6 +2,8 @@ use std::path::Path;
 
 use regex::Regex;
 
+use sqlx::mysql::MySqlPoolOptions;
+
 use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -42,44 +44,73 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
             println!("{}", request);
 
-            let path = match matching_path(&buf[..bs]) {
-                Ok(p) => p,
-                Err(e) => {
-                    eprintln!("failed to convert buf to str; err={:?}", e);
-                    return;
-                }
-            };
-
-            handler(&mut socket, path).await;
+            if let Err(e) = response(&buf, &mut socket).await {
+                eprintln!("err={:?}", e)
+            }
         });
     }
 }
 
-fn matching_path(buf: &[u8]) -> Result<&str, Box<dyn std::error::Error>> {
+async fn response(buf: &[u8], socket: &mut TcpStream) -> Result<(), Box<dyn std::error::Error>> {
     let address = str::from_utf8(&buf)?;
 
-    let re = Regex::new(r"^GET (?<address>\S+)")?;
+    let re = Regex::new(r"^(?<method>\S+) (?<address>\S+)")?;
     let Some(caps) = re.captures(address) else {
         panic!()
     };
 
-    let address = &caps["address"];
-
-    match address {
-        "/" => Ok("static/index.html"),
-        "/css/index.css" => Ok("static/css/index.css"),
-        "/css/404.css" => Ok("static/css/404.css"),
-        "/meme" => Ok("static/meme.html"),
-        "/css/meme.css" => Ok("static/css/meme.css"),
-        "/images/meme.jpg" => Ok("static/images/meme.jpg"),
-        "/button" => Ok("static/button.html"),
-        "/css/button.css" => Ok("static/css/button.css"),
-        "/js/button.js" => Ok("static/js/button.js"),
-        _ => Ok("static/404.html"),
+    match &caps["method"] {
+        "GET" => Ok(get_handler(socket, match_path(&caps["address"])).await),
+        "POST" => Ok(post_handler(socket, match_path(&caps["address"])).await),
+        _ => panic!(),
     }
 }
 
-async fn handler(socket: &mut TcpStream, path: &str) {
+async fn post_handler(socket: &mut TcpStream, path: String) {
+    match &path[..] {
+        "/click" => on_button_click(socket).await,
+        _ => {
+            let silly_message: &str = "horoshiy yazik programmirovania";
+            let res: String = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{}",
+                silly_message.len(),
+                silly_message
+            );
+            if let Err(e) = socket.write_all(res.as_bytes()).await {
+                eprintln!("could not write socket; err={:?}", e);
+            }
+        }
+    };
+}
+
+async fn on_button_click(socket: &mut TcpStream) {
+    let silly_message: &str = "horoshiy yazik programmirovania";
+    let res: String = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{}",
+        silly_message.len(),
+        silly_message
+    );
+    if let Err(e) = socket.write_all(res.as_bytes()).await {
+        eprintln!("could not write socket; err={:?}", e);
+    }
+}
+
+fn match_path(address: &str) -> String {
+    match address {
+        "/" => "static/index.html".to_string(),
+        "/css/index.css" => "static/css/index.css".to_string(),
+        "/css/404.css" => "static/css/404.css".to_string(),
+        "/meme" => "static/meme.html".to_string(),
+        "/css/meme.css" => "static/css/meme.css".to_string(),
+        "/images/meme.jpg" => "static/images/meme.jpg".to_string(),
+        "/button" => "static/button.html".to_string(),
+        "/css/button.css" => "static/css/button.css".to_string(),
+        "/js/button.js" => "static/js/button.js".to_string(),
+        _ => "static/404.html".to_string(),
+    }
+}
+
+async fn get_handler(socket: &mut TcpStream, path: String) {
     let file = match fs::read(&path).await {
         Ok(content) => content,
         Err(e) => {
