@@ -1,2 +1,4 @@
 /target
 rust-analyzer
+.env
+.*

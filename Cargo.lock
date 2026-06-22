@@ -21,7 +21,9 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 name = "asynchttp"
 version = "0.1.0"
 dependencies = [
+ "dotenvy",
  "regex",
+ "serde_json",
  "sqlx",
  "tokio",
 ]
@@ -962,6 +964,8 @@ dependencies = [
  "sha2 0.10.9",
  "smallvec",
  "thiserror",
+ "tokio",
+ "tokio-stream",
  "tracing",
  "url",
 ]
@@ -1001,6 +1005,7 @@ dependencies = [
  "sqlx-sqlite",
  "syn",
  "thiserror",
+ "tokio",
  "url",
 ]
 
@@ -1199,6 +1204,17 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "tokio-stream"
+version = "0.1.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32da49809aab5c3bc678af03902d4ccddea2a87d028d86392a4b1560c6906c70"
+dependencies = [
+ "futures-core",
+ "pin-project-lite",
+ "tokio",
 ]
 
 [[package]]

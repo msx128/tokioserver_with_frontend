@@ -1,5 +1,5 @@
 const button = document.getElementById('clickBtn');
-const couner = document.getElementById('counter');
+const counter = document.getElementById('counter');
 
 class MetaDataCollector {
   constructor(message) {
@@ -30,7 +30,7 @@ function sendOnClick() {
   })
   .then(response => response.text())
   .then(data => {
-    console.log(data);
+    counter.textContent = data;
   });
 }
 

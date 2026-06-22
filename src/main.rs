@@ -1,12 +1,21 @@
 use std::path::Path;
+use std::sync::Arc;
 
 use regex::Regex;
 
+use serde_json::Value;
+
+use sqlx::MySqlPool;
 use sqlx::mysql::MySqlPoolOptions;
 
 use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::Mutex;
+
+struct AppState {
+    pool: MySqlPool,
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -17,10 +26,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let listener = TcpListener::bind("127.0.0.1:8080").await?;
 
+    let pool = MySqlPoolOptions::new()
+        .max_connections(5)
+        .connect("mysql://root:123@localhost:3306/httpServer")
+        .await?;
+
+    let state = AppState { pool };
+    let state = Arc::new(Mutex::new(state));
+
     println!("sever started");
 
     loop {
         let (mut socket, _) = listener.accept().await?;
+        let state = state.clone();
 
         tokio::spawn(async move {
             let mut buf = [0; 1024];
@@ -44,33 +62,37 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
             println!("{}", request);
 
-            if let Err(e) = response(&buf, &mut socket).await {
+            if let Err(e) = response(&buf[..bs], &mut socket, state).await {
                 eprintln!("err={:?}", e)
             }
         });
     }
 }
 
-async fn response(buf: &[u8], socket: &mut TcpStream) -> Result<(), Box<dyn std::error::Error>> {
+async fn response(
+    buf: &[u8],
+    socket: &mut TcpStream,
+    state: Arc<Mutex<AppState>>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let address = str::from_utf8(&buf)?;
 
-    let re = Regex::new(r"^(?<method>\S+) (?<address>\S+)")?;
+    let re = Regex::new(r"^(?<method>\S+)\s+(?<address>\S+)[\s\S]*?\r?\n\r?\n(?<body>[\s\S]*)$")?;
     let Some(caps) = re.captures(address) else {
         panic!()
     };
 
     match &caps["method"] {
         "GET" => Ok(get_handler(socket, match_path(&caps["address"])).await),
-        "POST" => Ok(post_handler(socket, match_path(&caps["address"])).await),
+        "POST" => Ok(post_handler(socket, &caps["address"], &caps["body"], state).await),
         _ => panic!(),
     }
 }
 
-async fn post_handler(socket: &mut TcpStream, path: String) {
-    match &path[..] {
-        "/click" => on_button_click(socket).await,
+async fn post_handler(socket: &mut TcpStream, path: &str, body: &str, state: Arc<Mutex<AppState>>) {
+    match path {
+        "/click" => on_button_click(socket, body, state).await,
         _ => {
-            let silly_message: &str = "horoshiy yazik programmirovania";
+            let silly_message: &str = "horoshiy yazik";
             let res: String = format!(
                 "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{}",
                 silly_message.len(),
@@ -83,12 +105,26 @@ async fn post_handler(socket: &mut TcpStream, path: String) {
     };
 }
 
-async fn on_button_click(socket: &mut TcpStream) {
-    let silly_message: &str = "horoshiy yazik programmirovania";
+async fn on_button_click(socket: &mut TcpStream, body: &str, state: Arc<Mutex<AppState>>) {
+    let v: Value = match serde_json::from_str(body) {
+        Ok(g) => g,
+        Err(e) => {
+            eprintln!("problem with json parser; err={:?}", e);
+            Value::Null
+        }
+    };
+
+    let state = state.lock().await;
+
+    let row = sqlx::query!("select click from clicks_counter")
+        .fetch_one(&state.pool)
+        .await;
+
+    let counter: String = format!("{}", row.unwrap().click);
     let res: String = format!(
         "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{}",
-        silly_message.len(),
-        silly_message
+        counter.len(),
+        counter
     );
     if let Err(e) = socket.write_all(res.as_bytes()).await {
         eprintln!("could not write socket; err={:?}", e);
