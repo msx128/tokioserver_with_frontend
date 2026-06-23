@@ -1,3 +1,2 @@
 # tokioserver_with_frontend
-only tokio(almost) server with basic frontend that I done for the first time
-oh, and some easy sql integration
+I made tokio server, trying to not use many other libraries. there is index, meme and button pages. in button page there is a button with increments row in data base by one and output that row, witch all users can see.
