@@ -106,15 +106,19 @@ async fn post_handler(socket: &mut TcpStream, path: &str, body: &str, state: Arc
 }
 
 async fn on_button_click(socket: &mut TcpStream, body: &str, state: Arc<Mutex<AppState>>) {
-    let v: Value = match serde_json::from_str(body) {
+    let _v: Value = match serde_json::from_str(body) {
         Ok(g) => g,
         Err(e) => {
             eprintln!("problem with json parser; err={:?}", e);
             Value::Null
         }
-    };
+    }; //Idk for what i need that. let it be
 
     let state = state.lock().await;
+
+    let _change = sqlx::query!("update clicks_counter set click = click + 1")
+        .execute(&state.pool)
+        .await;
 
     let row = sqlx::query!("select click from clicks_counter")
         .fetch_one(&state.pool)
